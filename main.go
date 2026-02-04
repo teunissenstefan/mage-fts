@@ -45,7 +45,7 @@ func main() {
 	fmt.Printf("Searching for: %s\n", searchTerm)
 
 	// Get database connection info from DDEV
-	db, err := connectDdev()
+	db, dbName, err := connectDdev()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
 		os.Exit(1)
@@ -54,31 +54,31 @@ func main() {
 
 	fmt.Println("Connected to database successfully")
 
-	// Get and print tables TESTING TESTING
-	tables, err := getTables(db)
+	// Get tables and their text columns
+	tableColumns, err := getTableColumns(db, dbName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting tables: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Found %d tables:\n", len(tables))
-	for _, table := range tables {
-		fmt.Println("  -", table)
+	fmt.Printf("Found %d tables:\n", len(tableColumns))
+	for table, columns := range tableColumns {
+		fmt.Printf("  %s: %v\n", table, columns)
 	}
 
 	fmt.Println("TODO: search for", searchTerm)
 }
 
-func connectDdev() (*sql.DB, error) {
+func connectDdev() (*sql.DB, string, error) {
 	cmd := exec.Command("ddev", "describe", "-j")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to run DDEV describe: %w", err)
+		return nil, "", fmt.Errorf("failed to run DDEV describe: %w", err)
 	}
 
 	var desc DdevDescribe
 	if err := json.Unmarshal(output, &desc); err != nil {
-		return nil, fmt.Errorf("Failed to parse DDEV output: %w", err)
+		return nil, "", fmt.Errorf("failed to parse DDEV output: %w", err)
 	}
 
 	dsn := fmt.Sprintf("%s:%s@tcp(127.0.0.1:%d)/%s",
@@ -90,30 +90,36 @@ func connectDdev() (*sql.DB, error) {
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, "", fmt.Errorf("failed to open database: %w", err)
 	}
 
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		return nil, "", fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	return db, nil
+	return db, desc.Raw.DBInfo.DBName, nil
 }
 
-func getTables(db *sql.DB) ([]string, error) {
-	rows, err := db.Query("SHOW TABLES")
+func getTableColumns(db *sql.DB, dbName string) (map[string][]string, error) {
+	query := `
+		SELECT TABLE_NAME, COLUMN_NAME
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = ?
+		ORDER BY TABLE_NAME`
+
+	rows, err := db.Query(query, dbName)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var tables []string
+	tables := make(map[string][]string)
 	for rows.Next() {
-		var table string
-		if err := rows.Scan(&table); err != nil {
+		var tableName, columnName string
+		if err := rows.Scan(&tableName, &columnName); err != nil {
 			return nil, err
 		}
-		tables = append(tables, table)
+		tables[tableName] = append(tables[tableName], columnName)
 	}
 	return tables, rows.Err()
 }

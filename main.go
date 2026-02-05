@@ -23,14 +23,14 @@ type DdevDescribe struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: mage-fts <search-term> [options]")
-		fmt.Println()
-		fmt.Println("Options:")
-		fmt.Println("  --limit=N\t\tMax results per table (default: 20)")//TODO: Implement
-		fmt.Println("  --match=text\t\tOnly search text columns")//TODO: Implement
-		fmt.Println("  --tables=PATTERN\tOnly search matching tables")//TODO: Implement
-		fmt.Println("  --exclude=PATTERN\tExclude matching tables")//TODO: Implement
-		fmt.Println("  --dry-run\t\tShow queries without executing")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "Usage: mage-fts <search-term> [options]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Options:")
+		fmt.Fprintln(os.Stderr, "  --limit=N\t\tMax results per table (default: 20)")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --tables=PATTERN\tOnly search matching tables")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")//TODO: Implement
 		os.Exit(1)
 	}
 
@@ -42,7 +42,7 @@ func main() {
 	}
 
 	searchTerm := os.Args[1]
-	fmt.Printf("Searching for: %s\n", searchTerm)
+	fmt.Fprintf(os.Stderr, "Searching for: %s\n", searchTerm)
 
 	// Get database connection info from DDEV
 	db, dbName, err := connectDdev()
@@ -52,7 +52,7 @@ func main() {
 	}
 	defer db.Close()
 
-	fmt.Println("Connected to database successfully")
+	fmt.Fprintln(os.Stderr, "Connected to database successfully")
 
 	// Get tables and their text columns
 	tableColumns, err := getTableColumns(db, dbName)
@@ -61,11 +61,14 @@ func main() {
 		os.Exit(1)
 	}
 
+
+	//for testing
 	fmt.Printf("Found %d tables:\n", len(tableColumns))
 	for table, columns := range tableColumns {
 		fmt.Printf("  %s: %v\n", table, columns)
 	}
 
+	//still for testing
 	fmt.Println("TODO: search for", searchTerm)
 }
 

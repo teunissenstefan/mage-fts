@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -19,6 +20,11 @@ type DdevDescribe struct {
 			DBName        string `json:"dbname"`
 		} `json:"dbinfo"`
 	} `json:"raw"`
+}
+
+type TableInfo struct {
+	Name    string
+	Columns []string
 }
 
 func main() {
@@ -54,22 +60,27 @@ func main() {
 
 	fmt.Fprintln(os.Stderr, "Connected to database successfully")
 
-	// Get tables and their text columns
-	tableColumns, err := getTableColumns(db, dbName)
+	// Get tables and their columns
+	tables, err := getTableColumns(db, dbName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting tables: %v\n", err)
 		os.Exit(1)
 	}
 
 
-	//for testing
-	fmt.Printf("Found %d tables:\n", len(tableColumns))
-	for table, columns := range tableColumns {
-		fmt.Printf("  %s: %v\n", table, columns)
-	}
+	fmt.Fprintf(os.Stderr, "Found %d tables\n", len(tables))
 
-	//still for testing
-	fmt.Println("TODO: search for", searchTerm)
+	// Generate and execute queries for each table
+	for _, table := range tables {
+		if len(table.Columns) == 0 {
+			continue
+		}
+
+		if err := searchTable(db, dbName, table.Name, table.Columns, searchTerm); err != nil {
+			fmt.Fprintf(os.Stderr, "Error searching table %s: %v\n", table.Name, err)
+		}
+		//break //TSET
+	}
 }
 
 func connectDdev() (*sql.DB, string, error) {
@@ -103,12 +114,12 @@ func connectDdev() (*sql.DB, string, error) {
 	return db, desc.Raw.DBInfo.DBName, nil
 }
 
-func getTableColumns(db *sql.DB, dbName string) (map[string][]string, error) {
+func getTableColumns(db *sql.DB, dbName string) ([]TableInfo, error) {
 	query := `
 		SELECT TABLE_NAME, COLUMN_NAME
 		FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = ?
-		ORDER BY TABLE_NAME`
+		ORDER BY TABLE_NAME, ORDINAL_POSITION`
 
 	rows, err := db.Query(query, dbName)
 	if err != nil {
@@ -116,13 +127,71 @@ func getTableColumns(db *sql.DB, dbName string) (map[string][]string, error) {
 	}
 	defer rows.Close()
 
-	tables := make(map[string][]string)
+	var tables []TableInfo
+	var currentTable *TableInfo
+
 	for rows.Next() {
 		var tableName, columnName string
 		if err := rows.Scan(&tableName, &columnName); err != nil {
 			return nil, err
 		}
-		tables[tableName] = append(tables[tableName], columnName)
+
+		// If on new table, append the previous one and start a new one
+		if currentTable == nil || currentTable.Name != tableName {
+			if currentTable != nil {
+				tables = append(tables, *currentTable)
+			}
+			currentTable = &TableInfo{
+				Name:    tableName,
+				Columns: []string{},
+			}
+		}
+
+		currentTable.Columns = append(currentTable.Columns, columnName)
 	}
+
+	// Append last table
+	if currentTable != nil {
+		tables = append(tables, *currentTable)
+	}
+
 	return tables, rows.Err()
+}
+
+func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchTerm string) error {
+	// Build WHERE clause with OR conditions for all columns
+	whereConditions := []string{}
+	for _, column := range columns {
+		whereConditions = append(whereConditions, fmt.Sprintf("%s LIKE '%%%s%%'", column, searchTerm))
+	}
+
+	// Build full query
+	query := fmt.Sprintf("SELECT t.* FROM %s.%s t WHERE %s LIMIT 20;",
+		dbName,
+		tableName,
+		strings.Join(whereConditions, " OR "))
+
+	fmt.Fprintf(os.Stderr, "Searching through table: %s\n", tableName)
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return fmt.Errorf("query execution failed: %w", err)
+	}
+	defer rows.Close()
+
+	// Count results
+	resultCount := 0
+	for rows.Next() {
+		resultCount++
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	if resultCount > 0 {
+		fmt.Fprintf(os.Stderr, "Found %d results in table %s\n\n", resultCount, tableName)
+	}
+	return nil
 }

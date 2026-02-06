@@ -162,7 +162,7 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 	// Build WHERE clause with OR conditions for all columns
 	whereConditions := []string{}
 	for _, column := range columns {
-		whereConditions = append(whereConditions, fmt.Sprintf("%s LIKE '%%%s%%'", column, searchTerm))
+		whereConditions = append(whereConditions, fmt.Sprintf("`%s` LIKE '%%%s%%'", column, searchTerm))
 	}
 
 	// Build full query
@@ -171,6 +171,7 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 		tableName,
 		strings.Join(whereConditions, " OR "))
 
+	fmt.Fprintf(os.Stderr, "Searching through table: %s\n", query)
 	fmt.Fprintf(os.Stderr, "Searching through table: %s\n", tableName)
 
 	// Execute query

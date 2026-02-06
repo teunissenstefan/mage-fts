@@ -171,7 +171,6 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 		tableName,
 		strings.Join(whereConditions, " OR "))
 
-	fmt.Fprintf(os.Stderr, "Searching through table: %s\n", query)
 	fmt.Fprintf(os.Stderr, "Searching through table: %s\n", tableName)
 
 	// Execute query
@@ -192,7 +191,7 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 	}
 
 	if resultCount > 0 {
-		fmt.Fprintf(os.Stderr, "Found %d results in table %s\n\n", resultCount, tableName)
+		fmt.Fprintf(os.Stderr, "Found %d results in table %s\n", resultCount, tableName)
 	}
 	return nil
 }

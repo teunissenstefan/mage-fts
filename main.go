@@ -28,10 +28,10 @@ type TableInfo struct {
 }
 
 type SearchResult struct {
-	TableName string
-	Query     string
-	Rows      [][]interface{}
-	Columns   []string
+	TableName    string
+	DisplayQuery string
+	Rows         [][]interface{}
+	Columns      []string
 }
 
 func main() {
@@ -99,8 +99,8 @@ func main() {
 
 	// Display results
 	for _, result := range allResults {
-		fmt.Printf("Table: %s\n", result.TableName)
-		fmt.Printf("Query: %s\n", result.Query)
+		fmt.Printf("Table: %s - Query:\n", result.TableName)
+		fmt.Printf("%s\n", result.DisplayQuery)
 		for _, row := range result.Rows {
 			// Display first column and test column TODO: change
 			firstCol := formatValue(row[0])
@@ -192,9 +192,11 @@ func getTableColumns(db *sql.DB, dbName string) ([]TableInfo, error) {
 func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchTerm string) (SearchResult, error) {
 	// Build WHERE clause with OR conditions for all columns
 	whereConditions := []string{}
+	args := []interface{}{}
+
 	for _, column := range columns {
-		//TODO: change, obviously...
-		whereConditions = append(whereConditions, fmt.Sprintf("`%s` LIKE '%%%s%%'", column, searchTerm))
+		whereConditions = append(whereConditions, fmt.Sprintf("`%s` LIKE ?", column))
+		args = append(args, "%"+searchTerm+"%")
 	}
 
 	// Build full query
@@ -204,16 +206,16 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 		strings.Join(whereConditions, " OR "))
 
 	result := SearchResult{
-		TableName: tableName,
-		Query:     query,
-		Rows:      [][]interface{}{},
-		Columns:   []string{},
+		TableName:    tableName,
+		DisplayQuery: buildDisplayQuery(query, args),
+		Rows:         [][]interface{}{},
+		Columns:      []string{},
 	}
 
 	fmt.Fprintf(os.Stderr, "Searching through table: %s\n", tableName)
 
 	// Execute query
-	rows, err := db.Query(query)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return result, fmt.Errorf("query execution failed: %w", err)
 	}
@@ -256,4 +258,13 @@ func formatValue(val interface{}) string {
 		return string(b)
 	}
 	return fmt.Sprintf("%v", val)
+}
+
+func buildDisplayQuery(query string, args []interface{}) string {
+	result := query
+	for _, arg := range args {
+		value := fmt.Sprintf("'%v'", arg)
+		result = strings.Replace(result, "?", value, 1)
+	}
+	return result
 }

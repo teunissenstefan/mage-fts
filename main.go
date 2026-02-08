@@ -87,13 +87,19 @@ func main() {
 		fmt.Printf("Table: %s - Query:\n", result.TableName)
 		fmt.Printf("%s\n", result.DisplayQuery)
 		for _, row := range result.Rows {
-			// Display first column and test column TODO: change
-			firstCol := formatValue(row[0])
-			sampleCol := ""
-			if len(row) > 1 {
-				sampleCol = formatValue(row[1])
+			numCols := len(row)
+			if numCols > 5 {
+				numCols = 5
 			}
-			fmt.Printf("%s, \"%s\"\n", firstCol, sampleCol)
+
+			var output strings.Builder
+			for i := 0; i < numCols; i++ {
+				if i != 0 {
+					output.WriteString(",")
+				}
+				output.WriteString(fmt.Sprintf("\"%s\"", formatValue(row[i])))
+			}
+			fmt.Println(output.String())
 		}
 		fmt.Println()
 	}

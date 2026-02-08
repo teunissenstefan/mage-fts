@@ -91,29 +91,32 @@ func main() {
 		fmt.Printf("%s\n", result.DisplayQuery)
 		for _, row := range result.Rows {
 			hitColumnCount++
-			numCols := len(row)
-			if numCols > columnLimit {
-				numCols = columnLimit
-			}
-
-			var output strings.Builder
-			for i := 0; i < numCols; i++ {
-				if i != 0 {
-					output.WriteString(",")
-				}
-				value := formatValue(row[i])
-				if doTruncate {
-					truncated := truncateString(value, truncateLength)
-					output.WriteString(fmt.Sprintf("\"%s\"", truncated))
-				} else {
-					output.WriteString(fmt.Sprintf("\"%s\"", value))
-				}
-			}
-			fmt.Println(output.String())
+			fmt.Println(formatRow(row))
 		}
 		fmt.Println()
 	}
 	fmt.Fprintf(os.Stderr, "%d matches in %d tables \n", hitColumnCount, hitTableCount)
+}
+
+func formatRow(row []interface{}) string {
+	numCols := len(row)
+	if numCols > columnLimit {
+		numCols = columnLimit
+	}
+
+	var output strings.Builder
+	for i := 0; i < numCols; i++ {
+		if i != 0 {
+			output.WriteString(",")
+		}
+		value := formatValue(row[i])
+		if doTruncate {
+			value = truncateString(value, truncateLength)
+		}
+		output.WriteString(fmt.Sprintf("\"%s\"", value))
+	}
+	fmt.Println(output.String())
+	return output.String()
 }
 
 func printHelpExit() {
@@ -149,16 +152,7 @@ func handleArguments() {
 
 		if strings.HasPrefix(arg, "--limit=") {
 			limitStr := strings.TrimPrefix(arg, "--limit=")
-			limit, err := strconv.Atoi(limitStr)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: --limit value must be an integer, got: %s\n", limitStr)
-				os.Exit(1)
-			}
-			if limit <= 0 {
-				fmt.Fprintf(os.Stderr, "Error: --limit value must be positive, got: %d\n", limit)
-				os.Exit(1)
-			}
-			resultLimit = limit
+			resultLimit = parsePositiveInt(limitStr, "--limit")
 		} else if strings.HasPrefix(arg, "--include=") {
 			includeStr := strings.TrimPrefix(arg, "--include=")
 			includeTables = strings.Split(includeStr, ",")
@@ -167,16 +161,7 @@ func handleArguments() {
 			excludeTables = strings.Split(excludeStr, ",")
 		} else if strings.HasPrefix(arg, "--column-limit=") {
 			columnLimitStr := strings.TrimPrefix(arg, "--column-limit=")
-			columnLimitInt, err := strconv.Atoi(columnLimitStr)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: --column-limit value must be an integer, got: %s\n", columnLimitStr)
-				os.Exit(1)
-			}
-			if columnLimitInt <= 0 {
-				fmt.Fprintf(os.Stderr, "Error: --column-limit value must be positive, got: %d\n", columnLimitInt)
-				os.Exit(1)
-			}
-			columnLimit = columnLimitInt
+			columnLimit = parsePositiveInt(columnLimitStr, "--column-limit")
 		} else if strings.HasPrefix(arg, "--truncate-length=") {
 			truncateStr := strings.TrimPrefix(arg, "--truncate-length=")
 			truncateInt, err := strconv.Atoi(truncateStr)
@@ -198,6 +183,19 @@ func handleArguments() {
 			printHelpExit()
 		}
 	}
+}
+
+func parsePositiveInt(value, flagName string) int {
+	num, err := strconv.Atoi(value)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s must be an integer, got %s\n", flagName, value)
+		os.Exit(1)
+	}
+	if num <= 0 {
+		fmt.Fprintf(os.Stderr, "Error: %s must be positive, got %d\n", flagName, num)
+		os.Exit(1)
+	}
+	return num
 }
 
 func connectDdev() (*sql.DB, string, error) {

@@ -83,7 +83,7 @@ func main() {
 			continue
 		}
 
-		if len(result.Rows) > 0 {
+		if isDryRun || len(result.Rows) > 0 {
 			allResults = append(allResults, result)
 		}
 	}
@@ -106,6 +106,7 @@ func main() {
 }
 
 var resultLimit int = 20
+var isDryRun bool = false
 
 func handleArguments() {
 	if len(os.Args) < 2 {
@@ -135,6 +136,8 @@ func handleArguments() {
 				os.Exit(1)
 			}
 			resultLimit = limit
+		} else if arg == "--dry-run" {
+			isDryRun = true
 		} else {
 			fmt.Fprintf(os.Stderr, "Error: unknown argument: %s\n", arg)
 			os.Exit(1)
@@ -239,6 +242,10 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 		DisplayQuery: buildDisplayQuery(query, args),
 		Rows:         [][]interface{}{},
 		Columns:      []string{},
+	}
+
+	if isDryRun {
+		return result, nil
 	}
 
 	fmt.Fprintf(os.Stderr, "Searching through table: %s\n", tableName)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -35,17 +36,7 @@ type SearchResult struct {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: mage-fts <search-term> [options]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Options:")
-		fmt.Fprintln(os.Stderr, "  --limit=N\t\tMax results per table (default: 20)")//TODO: Implement
-		fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
-		fmt.Fprintln(os.Stderr, "  --tables=PATTERN\tOnly search matching tables")//TODO: Implement
-		fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")//TODO: Implement
-		fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")//TODO: Implement
-		os.Exit(1)
-	}
+	handleArguments()
 
 	// Check if we're in a Magento root
 	envFile := "app/etc/env.php"
@@ -111,6 +102,43 @@ func main() {
 			fmt.Printf("%s, \"%s\"\n", firstCol, sampleCol)
 		}
 		fmt.Println()
+	}
+}
+
+var resultLimit int = 20
+
+func handleArguments() {
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "Usage: mage-fts <search-term> [options]")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "Options:")
+		fmt.Fprintln(os.Stderr, "  --limit=N\t\tMax results per table (default: 20)")
+		fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --tables=PATTERN\tOnly search matching tables")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")//TODO: Implement
+		os.Exit(1)
+	}
+
+	for i := 2; i < len(os.Args); i++ {
+		arg := os.Args[i]
+
+		if strings.HasPrefix(arg, "--limit=") {
+			limitStr := strings.TrimPrefix(arg, "--limit=")
+			limit, err := strconv.Atoi(limitStr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: --limit value must be an integer, got: %s\n", limitStr)
+				os.Exit(1)
+			}
+			if limit <= 0 {
+				fmt.Fprintf(os.Stderr, "Error: --limit value must be positive, got: %d\n", limit)
+				os.Exit(1)
+			}
+			resultLimit = limit
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: unknown argument: %s\n", arg)
+			os.Exit(1)
+		}
 	}
 }
 
@@ -200,10 +228,11 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 	}
 
 	// Build full query
-	query := fmt.Sprintf("SELECT t.* FROM %s.%s t WHERE %s LIMIT 20;",
+	query := fmt.Sprintf("SELECT t.* FROM %s.%s t WHERE %s LIMIT %d;",
 		dbName,
 		tableName,
-		strings.Join(whereConditions, " OR "))
+		strings.Join(whereConditions, " OR "),
+		resultLimit)
 
 	result := SearchResult{
 		TableName:    tableName,

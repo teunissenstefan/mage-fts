@@ -91,14 +91,14 @@ func main() {
 		fmt.Printf("%s\n", result.DisplayQuery)
 		for _, row := range result.Rows {
 			hitColumnCount++
-			fmt.Println(formatRow(row))
+			formatRow(row)
 		}
 		fmt.Println()
 	}
 	fmt.Fprintf(os.Stderr, "%d matches in %d tables \n", hitColumnCount, hitTableCount)
 }
 
-func formatRow(row []interface{}) string {
+func formatRow(row []interface{}) {
 	numCols := len(row)
 	if numCols > columnLimit {
 		numCols = columnLimit
@@ -116,7 +116,6 @@ func formatRow(row []interface{}) string {
 		output.WriteString(fmt.Sprintf("\"%s\"", value))
 	}
 	fmt.Println(output.String())
-	return output.String()
 }
 
 func printHelpExit() {

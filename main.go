@@ -109,6 +109,7 @@ func main() {
 var resultLimit int = 20
 var isDryRun bool = false
 var includeTables []string
+var excludeTables []string
 
 func handleArguments() {
 	if len(os.Args) < 2 {
@@ -118,7 +119,7 @@ func handleArguments() {
 		fmt.Fprintln(os.Stderr, "  --limit=N\t\tMax results per table (default: 20)")
 		fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
 		fmt.Fprintln(os.Stderr, "  --include=PATTERN\tOnly search matching tables")
-		fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")
 		fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")
 		os.Exit(1)
 	}
@@ -141,6 +142,9 @@ func handleArguments() {
 		} else if strings.HasPrefix(arg, "--include=") {
 			includeStr := strings.TrimPrefix(arg, "--include=")
 			includeTables = strings.Split(includeStr, ",")
+		} else if strings.HasPrefix(arg, "--exclude=") {
+			excludeStr := strings.TrimPrefix(arg, "--exclude=")
+			excludeTables = strings.Split(excludeStr, ",")
 		} else if arg == "--dry-run" {
 			isDryRun = true
 		} else {
@@ -198,6 +202,7 @@ func getTableColumns(db *sql.DB, dbName string) ([]TableInfo, error) {
 	var currentTable *TableInfo
 
 	hasIncludePatterns := len(includeTables) > 0
+	hasExcludePatterns := len(excludeTables) > 0
 
 	for rows.Next() {
 		var tableName, columnName string
@@ -206,6 +211,10 @@ func getTableColumns(db *sql.DB, dbName string) ([]TableInfo, error) {
 		}
 
 		if hasIncludePatterns && !isTableIncluded(tableName) {
+			continue
+		}
+
+		if hasExcludePatterns && isTableExcluded(tableName) {
 			continue
 		}
 
@@ -302,6 +311,21 @@ func isTableIncluded(tableName string) bool {
 		matched, err := filepath.Match(includePattern, tableName)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: malformed pattern: %s\n", includePattern)
+			os.Exit(1)
+		}
+		if matched {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isTableExcluded(tableName string) bool {
+	for _, excludePattern := range excludeTables {
+		matched, err := filepath.Match(excludePattern, tableName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: malformed pattern: %s\n", excludePattern)
 			os.Exit(1)
 		}
 		if matched {

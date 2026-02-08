@@ -39,13 +39,6 @@ type SearchResult struct {
 func main() {
 	handleArguments()
 
-	// Check if we're in a Magento root
-	envFile := "app/etc/env.php"
-	if _, err := os.Stat(envFile); os.IsNotExist(err) {
-		fmt.Fprintln(os.Stderr, "Error: app/etc/env.php not found")
-		os.Exit(1)
-	}
-
 	searchTerm := os.Args[1]
 	fmt.Fprintf(os.Stderr, "Searching for: %s\n", searchTerm)
 

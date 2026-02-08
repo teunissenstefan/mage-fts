@@ -97,7 +97,13 @@ func main() {
 				if i != 0 {
 					output.WriteString(",")
 				}
-				output.WriteString(fmt.Sprintf("\"%s\"", formatValue(row[i])))
+				value := formatValue(row[i])
+				if doTruncate {
+					truncated := truncateString(value, truncateLength)
+					output.WriteString(fmt.Sprintf("\"%s\"", truncated))
+				} else {
+					output.WriteString(fmt.Sprintf("\"%s\"", value))
+				}
 			}
 			fmt.Println(output.String())
 		}
@@ -109,6 +115,8 @@ var resultLimit int = 20
 var isDryRun bool = false
 var includeTables []string
 var excludeTables []string
+var truncateLength int = 50
+var doTruncate bool = true
 
 func handleArguments() {
 	if len(os.Args) < 2 {
@@ -119,6 +127,8 @@ func handleArguments() {
 		fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
 		fmt.Fprintln(os.Stderr, "  --include=PATTERN\tOnly search matching tables")
 		fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")
+		fmt.Fprintln(os.Stderr, "  --truncate-length=N\tMax column display length (default: 50)")
+		fmt.Fprintln(os.Stderr, "  --no-truncate\t\tDisable column truncation")
 		fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")
 		os.Exit(1)
 	}
@@ -144,6 +154,20 @@ func handleArguments() {
 		} else if strings.HasPrefix(arg, "--exclude=") {
 			excludeStr := strings.TrimPrefix(arg, "--exclude=")
 			excludeTables = strings.Split(excludeStr, ",")
+		} else if strings.HasPrefix(arg, "--truncate-length=") {
+			truncateStr := strings.TrimPrefix(arg, "--truncate-length=")
+			truncateInt, err := strconv.Atoi(truncateStr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: --truncate-length value must be an integer, got: %s\n", truncateStr)
+				os.Exit(1)
+			}
+			if truncateInt <= 0 {
+				fmt.Fprintf(os.Stderr, "Error: --truncate-length value must be positive, got: %d\n", truncateInt)
+				os.Exit(1)
+			}
+			truncateLength = truncateInt
+		} else if arg == "--no-truncate" {
+			doTruncate = false
 		} else if arg == "--dry-run" {
 			isDryRun = true
 		} else {
@@ -343,6 +367,13 @@ func formatValue(val interface{}) string {
 		return string(b)
 	}
 	return fmt.Sprintf("%v", val)
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func buildDisplayQuery(query string, args []interface{}) string {

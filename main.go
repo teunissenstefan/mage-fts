@@ -83,10 +83,14 @@ func main() {
 	}
 
 	// Display results
+	hitTableCount := 0
+	hitColumnCount := 0
 	for _, result := range allResults {
+		hitTableCount++
 		fmt.Printf("Table: %s - Query:\n", result.TableName)
 		fmt.Printf("%s\n", result.DisplayQuery)
 		for _, row := range result.Rows {
+			hitColumnCount++
 			numCols := len(row)
 			if numCols > columnLimit {
 				numCols = columnLimit
@@ -109,6 +113,7 @@ func main() {
 		}
 		fmt.Println()
 	}
+	fmt.Fprintf(os.Stderr, "%d matches in %d tables \n", hitColumnCount, hitTableCount)
 }
 
 func printHelpExit() {

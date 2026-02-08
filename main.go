@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -107,6 +108,7 @@ func main() {
 
 var resultLimit int = 20
 var isDryRun bool = false
+var includeTables []string
 
 func handleArguments() {
 	if len(os.Args) < 2 {
@@ -115,7 +117,7 @@ func handleArguments() {
 		fmt.Fprintln(os.Stderr, "Options:")
 		fmt.Fprintln(os.Stderr, "  --limit=N\t\tMax results per table (default: 20)")
 		fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
-		fmt.Fprintln(os.Stderr, "  --tables=PATTERN\tOnly search matching tables")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --include=PATTERN\tOnly search matching tables")
 		fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")//TODO: Implement
 		fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")
 		os.Exit(1)
@@ -136,6 +138,9 @@ func handleArguments() {
 				os.Exit(1)
 			}
 			resultLimit = limit
+		} else if strings.HasPrefix(arg, "--include=") {
+			includeStr := strings.TrimPrefix(arg, "--include=")
+			includeTables = strings.Split(includeStr, ",")
 		} else if arg == "--dry-run" {
 			isDryRun = true
 		} else {
@@ -192,10 +197,16 @@ func getTableColumns(db *sql.DB, dbName string) ([]TableInfo, error) {
 	var tables []TableInfo
 	var currentTable *TableInfo
 
+	hasIncludePatterns := len(includeTables) > 0
+
 	for rows.Next() {
 		var tableName, columnName string
 		if err := rows.Scan(&tableName, &columnName); err != nil {
 			return nil, err
+		}
+
+		if hasIncludePatterns && !isTableIncluded(tableName) {
+			continue
 		}
 
 		// If on new table, append the previous one and start a new one
@@ -284,6 +295,21 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 	}
 
 	return result, nil
+}
+
+func isTableIncluded(tableName string) bool {
+	for _, includePattern := range includeTables {
+		matched, err := filepath.Match(includePattern, tableName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: malformed pattern: %s\n", includePattern)
+			os.Exit(1)
+		}
+		if matched {
+			return true
+		}
+	}
+
+	return false
 }
 
 func formatValue(val interface{}) string {

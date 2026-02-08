@@ -27,6 +27,13 @@ type TableInfo struct {
 	Columns []string
 }
 
+type SearchResult struct {
+	TableName string
+	Query     string
+	Rows      [][]interface{}
+	Columns   []string
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage: mage-fts <search-term> [options]")
@@ -70,16 +77,39 @@ func main() {
 
 	fmt.Fprintf(os.Stderr, "Found %d tables\n", len(tables))
 
+	// Collect results
+	var allResults []SearchResult
+
 	// Generate and execute queries for each table
 	for _, table := range tables {
 		if len(table.Columns) == 0 {
 			continue
 		}
 
-		if err := searchTable(db, dbName, table.Name, table.Columns, searchTerm); err != nil {
+		result, err := searchTable(db, dbName, table.Name, table.Columns, searchTerm)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error searching table %s: %v\n", table.Name, err)
+			continue
 		}
-		//break //TSET
+
+		if len(result.Rows) > 0 {
+			allResults = append(allResults, result)
+		}
+	}
+
+	// Display results
+	for _, result := range allResults {
+		fmt.Printf("Table: %s\n", result.TableName)
+		for _, row := range result.Rows {
+			// Display first column and test column TODO: change
+			firstCol := formatValue(row[0])
+			sampleCol := ""
+			if len(row) > 1 {
+				sampleCol = formatValue(row[1])
+			}
+			fmt.Printf("%s, \"%s\"\n", firstCol, sampleCol)
+		}
+		fmt.Println()
 	}
 }
 
@@ -158,10 +188,11 @@ func getTableColumns(db *sql.DB, dbName string) ([]TableInfo, error) {
 	return tables, rows.Err()
 }
 
-func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchTerm string) error {
+func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchTerm string) (SearchResult, error) {
 	// Build WHERE clause with OR conditions for all columns
 	whereConditions := []string{}
 	for _, column := range columns {
+		//TODO: change, obviously...
 		whereConditions = append(whereConditions, fmt.Sprintf("`%s` LIKE '%%%s%%'", column, searchTerm))
 	}
 
@@ -171,27 +202,57 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 		tableName,
 		strings.Join(whereConditions, " OR "))
 
+	result := SearchResult{
+		TableName: tableName,
+		Query:     query,
+		Rows:      [][]interface{}{},
+		Columns:   []string{},
+	}
+
 	fmt.Fprintf(os.Stderr, "Searching through table: %s\n", tableName)
 
 	// Execute query
 	rows, err := db.Query(query)
 	if err != nil {
-		return fmt.Errorf("query execution failed: %w", err)
+		return result, fmt.Errorf("query execution failed: %w", err)
 	}
 	defer rows.Close()
 
-	// Count results
-	resultCount := 0
+	// Get column names
+	resultColumns, err := rows.Columns()
+	if err != nil {
+		return result, fmt.Errorf("failed to get columns: %w", err)
+	}
+	result.Columns = resultColumns
+
+	// Fetch all rows
 	for rows.Next() {
-		resultCount++
+		values := make([]interface{}, len(resultColumns))
+		valuePtrs := make([]interface{}, len(resultColumns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return result, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		result.Rows = append(result.Rows, values)
 	}
 
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("error iterating rows: %w", err)
+		return result, fmt.Errorf("error iterating rows: %w", err)
 	}
 
-	if resultCount > 0 {
-		fmt.Fprintf(os.Stderr, "Found %d results in table %s\n", resultCount, tableName)
+	return result, nil
+}
+
+func formatValue(val interface{}) string {
+	if val == nil {
+		return "NULL"
 	}
-	return nil
+	if b, ok := val.([]byte); ok {
+		return string(b)
+	}
+	return fmt.Sprintf("%v", val)
 }

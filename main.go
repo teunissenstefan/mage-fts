@@ -88,8 +88,8 @@ func main() {
 		fmt.Printf("%s\n", result.DisplayQuery)
 		for _, row := range result.Rows {
 			numCols := len(row)
-			if numCols > 5 {
-				numCols = 5
+			if numCols > columnLimit {
+				numCols = columnLimit
 			}
 
 			var output strings.Builder
@@ -111,26 +111,32 @@ func main() {
 	}
 }
 
+func printHelpExit() {
+	fmt.Fprintln(os.Stderr, "Usage: mage-fts <search-term> [options]")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Options:")
+	fmt.Fprintln(os.Stderr, "  --limit=N\t\tMax results per table (default: 20)")
+	fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
+	fmt.Fprintln(os.Stderr, "  --include=PATTERN\tOnly search matching tables")
+	fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")
+	fmt.Fprintln(os.Stderr, "  --column-limit=N\tAmount of columns to display (default: 5)")
+	fmt.Fprintln(os.Stderr, "  --truncate-length=N\tMax column display length (default: 50)")
+	fmt.Fprintln(os.Stderr, "  --no-truncate\t\tDisable column truncation")
+	fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")
+	os.Exit(1)
+}
+
 var resultLimit int = 20
 var isDryRun bool = false
 var includeTables []string
 var excludeTables []string
 var truncateLength int = 50
 var doTruncate bool = true
+var columnLimit int = 5
 
 func handleArguments() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: mage-fts <search-term> [options]")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "Options:")
-		fmt.Fprintln(os.Stderr, "  --limit=N\t\tMax results per table (default: 20)")
-		fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
-		fmt.Fprintln(os.Stderr, "  --include=PATTERN\tOnly search matching tables")
-		fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")
-		fmt.Fprintln(os.Stderr, "  --truncate-length=N\tMax column display length (default: 50)")
-		fmt.Fprintln(os.Stderr, "  --no-truncate\t\tDisable column truncation")
-		fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")
-		os.Exit(1)
+		printHelpExit()
 	}
 
 	for i := 2; i < len(os.Args); i++ {
@@ -154,6 +160,18 @@ func handleArguments() {
 		} else if strings.HasPrefix(arg, "--exclude=") {
 			excludeStr := strings.TrimPrefix(arg, "--exclude=")
 			excludeTables = strings.Split(excludeStr, ",")
+		} else if strings.HasPrefix(arg, "--column-limit=") {
+			columnLimitStr := strings.TrimPrefix(arg, "--column-limit=")
+			columnLimitInt, err := strconv.Atoi(columnLimitStr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: --column-limit value must be an integer, got: %s\n", columnLimitStr)
+				os.Exit(1)
+			}
+			if columnLimitInt <= 0 {
+				fmt.Fprintf(os.Stderr, "Error: --column-limit value must be positive, got: %d\n", columnLimitInt)
+				os.Exit(1)
+			}
+			columnLimit = columnLimitInt
 		} else if strings.HasPrefix(arg, "--truncate-length=") {
 			truncateStr := strings.TrimPrefix(arg, "--truncate-length=")
 			truncateInt, err := strconv.Atoi(truncateStr)
@@ -172,7 +190,7 @@ func handleArguments() {
 			isDryRun = true
 		} else {
 			fmt.Fprintf(os.Stderr, "Error: unknown argument: %s\n", arg)
-			os.Exit(1)
+			printHelpExit()
 		}
 	}
 }

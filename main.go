@@ -117,7 +117,7 @@ func handleArguments() {
 		fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
 		fmt.Fprintln(os.Stderr, "  --tables=PATTERN\tOnly search matching tables")//TODO: Implement
 		fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")//TODO: Implement
-		fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")//TODO: Implement
+		fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")
 		os.Exit(1)
 	}
 

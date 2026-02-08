@@ -100,6 +100,7 @@ func main() {
 	// Display results
 	for _, result := range allResults {
 		fmt.Printf("Table: %s\n", result.TableName)
+		fmt.Printf("Query: %s\n", result.Query)
 		for _, row := range result.Rows {
 			// Display first column and test column TODO: change
 			firstCol := formatValue(row[0])

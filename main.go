@@ -37,7 +37,10 @@ type SearchResult struct {
 }
 
 func main() {
-	handleArguments()
+	if err := handleArguments(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 
 	searchTerm := os.Args[1]
 	fmt.Fprintf(os.Stderr, "Searching for: %s\n", searchTerm)
@@ -141,7 +144,7 @@ var truncateLength int = 50
 var doTruncate bool = true
 var columnLimit int = 5
 
-func handleArguments() {
+func handleArguments() error {
 	if len(os.Args) < 2 {
 		printHelpExit()
 	}
@@ -151,7 +154,11 @@ func handleArguments() {
 
 		if strings.HasPrefix(arg, "--limit=") {
 			limitStr := strings.TrimPrefix(arg, "--limit=")
-			resultLimit = parsePositiveInt(limitStr, "--limit")
+			val, err := parsePositiveInt(limitStr, "--limit")
+			if err != nil {
+				return err
+			}
+			resultLimit = val
 		} else if strings.HasPrefix(arg, "--include=") {
 			includeStr := strings.TrimPrefix(arg, "--include=")
 			includeTables = strings.Split(includeStr, ",")
@@ -160,41 +167,38 @@ func handleArguments() {
 			excludeTables = strings.Split(excludeStr, ",")
 		} else if strings.HasPrefix(arg, "--column-limit=") {
 			columnLimitStr := strings.TrimPrefix(arg, "--column-limit=")
-			columnLimit = parsePositiveInt(columnLimitStr, "--column-limit")
+			val, err := parsePositiveInt(columnLimitStr, "--column-limit")
+			if err != nil {
+				return err
+			}
+			columnLimit = val
 		} else if strings.HasPrefix(arg, "--truncate-length=") {
 			truncateStr := strings.TrimPrefix(arg, "--truncate-length=")
-			truncateInt, err := strconv.Atoi(truncateStr)
+			val, err := parsePositiveInt(truncateStr, "--truncate-length")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: --truncate-length value must be an integer, got: %s\n", truncateStr)
-				os.Exit(1)
+				return err
 			}
-			if truncateInt <= 0 {
-				fmt.Fprintf(os.Stderr, "Error: --truncate-length value must be positive, got: %d\n", truncateInt)
-				os.Exit(1)
-			}
-			truncateLength = truncateInt
+			truncateLength = val
 		} else if arg == "--no-truncate" {
 			doTruncate = false
 		} else if arg == "--dry-run" {
 			isDryRun = true
 		} else {
-			fmt.Fprintf(os.Stderr, "Error: unknown argument: %s\n", arg)
-			printHelpExit()
+			return fmt.Errorf("unknown argument: %s", arg)
 		}
 	}
+	return nil
 }
 
-func parsePositiveInt(value, flagName string) int {
+func parsePositiveInt(value, flagName string) (int, error) {
 	num, err := strconv.Atoi(value)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s must be an integer, got %s\n", flagName, value)
-		os.Exit(1)
+		return 0, fmt.Errorf("%s must be an integer, got %s", flagName, value)
 	}
 	if num <= 0 {
-		fmt.Fprintf(os.Stderr, "Error: %s must be positive, got %d\n", flagName, num)
-		os.Exit(1)
+		return 0, fmt.Errorf("%s must be positive, got %d", flagName, num)
 	}
-	return num
+	return num, nil
 }
 
 func connectDdev() (*sql.DB, string, error) {
@@ -214,7 +218,7 @@ func connectDdev() (*sql.DB, string, error) {
 		desc.Raw.DBInfo.Password,
 		desc.Raw.DBInfo.PublishedPort,
 		desc.Raw.DBInfo.DBName,
-	)
+		)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -230,10 +234,10 @@ func connectDdev() (*sql.DB, string, error) {
 
 func getTableColumns(db *sql.DB, dbName string) ([]TableInfo, error) {
 	query := `
-		SELECT TABLE_NAME, COLUMN_NAME
-		FROM information_schema.COLUMNS
-		WHERE TABLE_SCHEMA = ?
-		ORDER BY TABLE_NAME, ORDINAL_POSITION`
+	SELECT TABLE_NAME, COLUMN_NAME
+	FROM information_schema.COLUMNS
+	WHERE TABLE_SCHEMA = ?
+	ORDER BY TABLE_NAME, ORDINAL_POSITION`
 
 	rows, err := db.Query(query, dbName)
 	if err != nil {
@@ -253,12 +257,24 @@ func getTableColumns(db *sql.DB, dbName string) ([]TableInfo, error) {
 			return nil, err
 		}
 
-		if hasIncludePatterns && !isTableIncluded(tableName) {
-			continue
+		if hasIncludePatterns {
+			included, err := isTableIncluded(tableName)
+			if err != nil {
+				return nil, err
+			}
+			if !included {
+				continue
+			}
 		}
 
-		if hasExcludePatterns && isTableExcluded(tableName) {
-			continue
+		if hasExcludePatterns {
+			excluded, err := isTableExcluded(tableName)
+			if err != nil {
+				return nil, err
+			}
+			if excluded {
+				continue
+			}
 		}
 
 		// If on new table, append the previous one and start a new one
@@ -349,34 +365,32 @@ func searchTable(db *sql.DB, dbName, tableName string, columns []string, searchT
 	return result, nil
 }
 
-func isTableIncluded(tableName string) bool {
+func isTableIncluded(tableName string) (bool, error) {
 	for _, includePattern := range includeTables {
 		matched, err := filepath.Match(includePattern, tableName)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: malformed pattern: %s\n", includePattern)
-			os.Exit(1)
+			return false, fmt.Errorf("malformed pattern: %s", includePattern)
 		}
 		if matched {
-			return true
+			return true, nil
 		}
 	}
 
-	return false
+	return false, nil
 }
 
-func isTableExcluded(tableName string) bool {
+func isTableExcluded(tableName string) (bool, error) {
 	for _, excludePattern := range excludeTables {
 		matched, err := filepath.Match(excludePattern, tableName)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: malformed pattern: %s\n", excludePattern)
-			os.Exit(1)
+			return false, fmt.Errorf("malformed pattern: %s", excludePattern)
 		}
 		if matched {
-			return true
+			return true, nil
 		}
 	}
 
-	return false
+	return false, nil
 }
 
 func formatValue(val interface{}) string {

@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
 type DdevDescribe struct {
@@ -37,18 +35,33 @@ type SearchResult struct {
 }
 
 func main() {
-	if err := handleArguments(); err != nil {
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "--ssh-json=") {
+			sshJSON = strings.TrimPrefix(arg, "--ssh-json=")
+			break
+		}
+	}
+
+	searchTerm, err := handleArguments()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	searchTerm := os.Args[1]
 	fmt.Fprintf(os.Stderr, "Searching for: %s\n", searchTerm)
 
-	// Get database connection info from DDEV
-	db, dbName, err := connectDdev()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", err)
+	var db *sql.DB
+	var dbName string
+	var dbErr error
+
+	if sshJSON != "" {
+		db, dbName, dbErr = connectSSH(sshJSON)
+	} else {
+		db, dbName, dbErr = connectDdev()
+	}
+
+	if dbErr != nil {
+		fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", dbErr)
 		os.Exit(1)
 	}
 	defer db.Close()
@@ -61,7 +74,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error getting tables: %v\n", err)
 		os.Exit(1)
 	}
-
 
 	fmt.Fprintf(os.Stderr, "Found %d tables\n", len(tables))
 
@@ -143,20 +155,19 @@ var excludeTables []string
 var truncateLength int = 50
 var doTruncate bool = true
 var columnLimit int = 5
+var sshJSON string = ""
 
-func handleArguments() error {
-	if len(os.Args) < 2 {
-		printHelpExit()
-	}
+func handleArguments() (string, error) {
+	var searchTerm string
 
-	for i := 2; i < len(os.Args); i++ {
+	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
 
 		if strings.HasPrefix(arg, "--limit=") {
 			limitStr := strings.TrimPrefix(arg, "--limit=")
 			val, err := parsePositiveInt(limitStr, "--limit")
 			if err != nil {
-				return err
+				return "", err
 			}
 			resultLimit = val
 		} else if strings.HasPrefix(arg, "--include=") {
@@ -169,25 +180,37 @@ func handleArguments() error {
 			columnLimitStr := strings.TrimPrefix(arg, "--column-limit=")
 			val, err := parsePositiveInt(columnLimitStr, "--column-limit")
 			if err != nil {
-				return err
+				return "", err
 			}
 			columnLimit = val
 		} else if strings.HasPrefix(arg, "--truncate-length=") {
 			truncateStr := strings.TrimPrefix(arg, "--truncate-length=")
 			val, err := parsePositiveInt(truncateStr, "--truncate-length")
 			if err != nil {
-				return err
+				return "", err
 			}
 			truncateLength = val
 		} else if arg == "--no-truncate" {
 			doTruncate = false
 		} else if arg == "--dry-run" {
 			isDryRun = true
+		} else if strings.HasPrefix(arg, "--ssh-json=") {
+			// already handled before handleArguments is called
+		} else if strings.HasPrefix(arg, "--") {
+			return "", fmt.Errorf("unknown argument: %s", arg)
 		} else {
-			return fmt.Errorf("unknown argument: %s", arg)
+			if searchTerm != "" {
+				return "", fmt.Errorf("unexpected argument: %s (search term already set to %q)", arg, searchTerm)
+			}
+			searchTerm = arg
 		}
 	}
-	return nil
+
+	if searchTerm == "" {
+		printHelpExit()
+	}
+
+	return searchTerm, nil
 }
 
 func parsePositiveInt(value, flagName string) (int, error) {
@@ -218,7 +241,7 @@ func connectDdev() (*sql.DB, string, error) {
 		desc.Raw.DBInfo.Password,
 		desc.Raw.DBInfo.PublishedPort,
 		desc.Raw.DBInfo.DBName,
-		)
+	)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {

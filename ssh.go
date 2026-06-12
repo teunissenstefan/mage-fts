@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
@@ -185,4 +186,86 @@ func runSSHCommand(client *ssh.Client, cmd string) (string, error) {
 	session.Stdout = &stdout
 	session.Run(cmd) // non-zero exit codes are not errors (because of magerun)
 	return stdout.String(), nil
+}
+
+func connectSSHWordPress(serverJSON string) (*sql.DB, string, error) {
+	var info ServerInfo
+	if err := json.Unmarshal([]byte(serverJSON), &info); err != nil {
+		return nil, "", fmt.Errorf("invalid server JSON: %w", err)
+	}
+
+	client, err := dialSSH(info)
+	if err != nil {
+		return nil, "", fmt.Errorf("SSH connection failed: %w", err)
+	}
+	sshClientConn = client
+
+	fmt.Fprintf(os.Stderr, "Connected to %s@%s:%d\n", info.Username, info.Server, info.Port)
+
+	wpConfigPath, err := findWordPressConfig(client)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not find wp-config.php: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "Found wp-config.php: %s\n", wpConfigPath)
+
+	host, dbname, username, password, err := readWpConfig(client, wpConfigPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("could not parse wp-config.php: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Connecting to WordPress database: %s\n", dbname)
+
+	mysql.RegisterDialContext("mysql+ssh", func(ctx context.Context, addr string) (net.Conn, error) {
+		return sshClientConn.Dial("tcp", addr)
+	})
+
+	if host == "localhost" {
+		host = "127.0.0.1"
+	}
+
+	dsn := fmt.Sprintf("%s:%s@mysql+ssh(%s:3306)/%s", username, password, host, dbname)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to open database: %w", err)
+	}
+	if err := db.Ping(); err != nil {
+		return nil, "", fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return db, dbname, nil
+}
+
+func findWordPressConfig(client *ssh.Client) (string, error) {
+	out, _ := runSSHCommand(client, "find ~ -maxdepth 8 -name 'wp-config.php' 2>/dev/null | head -1")
+	if wpConfig := strings.TrimSpace(out); wpConfig != "" {
+		return wpConfig, nil
+	}
+	return "", fmt.Errorf("wp-config.php not found on remote server")
+}
+
+func readWpConfig(client *ssh.Client, configPath string) (host, dbname, username, password string, err error) {
+	out, _ := runSSHCommand(client, fmt.Sprintf("cat '%s'", configPath))
+	content := strings.TrimSpace(out)
+	if content == "" {
+		return "", "", "", "", fmt.Errorf("failed to read wp-config.php at %s", configPath)
+	}
+
+	dbname = parseWpDefine(content, "DB_NAME")
+	username = parseWpDefine(content, "DB_USER")
+	password = parseWpDefine(content, "DB_PASSWORD")
+	host = parseWpDefine(content, "DB_HOST")
+
+	if dbname == "" || username == "" || host == "" {
+		err = fmt.Errorf("incomplete WordPress database info (got host=%q dbname=%q username=%q)", host, dbname, username)
+	}
+	return
+}
+
+func parseWpDefine(content, name string) string {
+	pattern := fmt.Sprintf(`(?i)define\s*\(\s*['"]%s['"]\s*,\s*['"]([^'"]+)['"]`, regexp.QuoteMeta(name))
+	re := regexp.MustCompile(pattern)
+	if m := re.FindStringSubmatch(content); len(m) > 1 {
+		return m[1]
+	}
+	return ""
 }

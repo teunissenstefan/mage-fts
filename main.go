@@ -50,11 +50,18 @@ func main() {
 
 	fmt.Fprintf(os.Stderr, "Searching for: %s\n", searchTerm)
 
+	if isWordPress && sshJSON == "" {
+		fmt.Fprintln(os.Stderr, "Error: --wp requires --ssh-json=")
+		os.Exit(1)
+	}
+
 	var db *sql.DB
 	var dbName string
 	var dbErr error
 
-	if sshJSON != "" {
+	if sshJSON != "" && isWordPress {
+		db, dbName, dbErr = connectSSHWordPress(sshJSON)
+	} else if sshJSON != "" {
 		db, dbName, dbErr = connectSSH(sshJSON)
 	} else {
 		db, dbName, dbErr = connectDdev()
@@ -138,13 +145,15 @@ func printHelpExit() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Options:")
 	fmt.Fprintln(os.Stderr, "  --limit=N\t\tMax results per table (default: 20)")
-	fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns")//TODO: Implement
+	fmt.Fprintln(os.Stderr, "  --match=text\t\tOnly search text columns") //TODO: Implement
 	fmt.Fprintln(os.Stderr, "  --include=PATTERN\tOnly search matching tables")
 	fmt.Fprintln(os.Stderr, "  --exclude=PATTERN\tExclude matching tables")
 	fmt.Fprintln(os.Stderr, "  --column-limit=N\tAmount of columns to display (default: 5)")
 	fmt.Fprintln(os.Stderr, "  --truncate-length=N\tMax column display length (default: 50)")
 	fmt.Fprintln(os.Stderr, "  --no-truncate\t\tDisable column truncation")
 	fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")
+	fmt.Fprintln(os.Stderr, "  --ssh-json=JSON\tConnect to remote server via SSH (use with server --json)")
+	fmt.Fprintln(os.Stderr, "  --wp\t\t\tSearch remote WordPress database (requires --ssh-json=)")
 	os.Exit(1)
 }
 
@@ -156,6 +165,7 @@ var truncateLength int = 50
 var doTruncate bool = true
 var columnLimit int = 5
 var sshJSON string = ""
+var isWordPress bool = false
 
 func handleArguments() (string, error) {
 	var searchTerm string
@@ -196,6 +206,8 @@ func handleArguments() (string, error) {
 			isDryRun = true
 		} else if strings.HasPrefix(arg, "--ssh-json=") {
 			// already handled before handleArguments is called
+		} else if arg == "--wp" {
+			isWordPress = true
 		} else if strings.HasPrefix(arg, "--") {
 			return "", fmt.Errorf("unknown argument: %s", arg)
 		} else {

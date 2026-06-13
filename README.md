@@ -21,6 +21,7 @@ mage-fts <search-term> [options]
 | `--dry-run` | | Print queries without executing them |
 | `--ssh-json=JSON` | | Connect to a remote server via SSH |
 | `--wp` | | Search a remote WordPress database (requires `--ssh-json=`) |
+| `--output=FORMAT` | `table` | Output format: `table` or `raw` |
 
 ### Local DDEV database
 

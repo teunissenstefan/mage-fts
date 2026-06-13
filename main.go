@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 )
 
 type DdevDescribe struct {
@@ -111,9 +112,25 @@ func main() {
 		hitTableCount++
 		fmt.Printf("Table: %s - Query:\n", result.TableName)
 		fmt.Printf("%s\n", result.DisplayQuery)
-		for _, row := range result.Rows {
-			hitColumnCount++
-			formatRow(row)
+		if outputFormat == "table" {
+			printTableFormatted(result)
+			hitColumnCount += len(result.Rows)
+		} else {
+			numCols := len(result.Columns)
+			if numCols > columnLimit {
+				numCols = columnLimit
+			}
+			if numCols > 0 {
+				headers := make([]string, numCols)
+				for i := 0; i < numCols; i++ {
+					headers[i] = fmt.Sprintf("%q", result.Columns[i])
+				}
+				fmt.Println(strings.Join(headers, ","))
+			}
+			for _, row := range result.Rows {
+				hitColumnCount++
+				formatRow(row)
+			}
 		}
 		fmt.Println()
 	}
@@ -140,6 +157,34 @@ func formatRow(row []interface{}) {
 	fmt.Println(output.String())
 }
 
+func printTableFormatted(result SearchResult) {
+	numCols := len(result.Columns)
+	if numCols > columnLimit {
+		numCols = columnLimit
+	}
+	if numCols == 0 {
+		return
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	fmt.Fprintln(w, strings.Join(result.Columns[:numCols], "\t"))
+
+	for _, row := range result.Rows {
+		cols := make([]string, numCols)
+		for i := 0; i < numCols; i++ {
+			value := formatValue(row[i])
+			if doTruncate {
+				value = truncateString(value, truncateLength)
+			}
+			cols[i] = value
+		}
+		fmt.Fprintln(w, strings.Join(cols, "\t"))
+	}
+
+	w.Flush()
+}
+
 func printHelpExit() {
 	fmt.Fprintln(os.Stderr, "Usage: mage-fts <search-term> [options]")
 	fmt.Fprintln(os.Stderr)
@@ -154,6 +199,7 @@ func printHelpExit() {
 	fmt.Fprintln(os.Stderr, "  --dry-run\t\tShow queries without executing")
 	fmt.Fprintln(os.Stderr, "  --ssh-json=JSON\tConnect to remote server via SSH (use with server --json)")
 	fmt.Fprintln(os.Stderr, "  --wp\t\t\tSearch remote WordPress database (requires --ssh-json=)")
+	fmt.Fprintln(os.Stderr, "  --output=FORMAT\tOutput format: table (default), raw")
 	os.Exit(1)
 }
 
@@ -166,6 +212,7 @@ var doTruncate bool = true
 var columnLimit int = 5
 var sshJSON string = ""
 var isWordPress bool = false
+var outputFormat string = "table"
 
 func handleArguments() (string, error) {
 	var searchTerm string
@@ -208,6 +255,11 @@ func handleArguments() (string, error) {
 			// already handled before handleArguments is called
 		} else if arg == "--wp" {
 			isWordPress = true
+		} else if strings.HasPrefix(arg, "--output=") {
+			outputFormat = strings.TrimPrefix(arg, "--output=")
+			if outputFormat != "table" && outputFormat != "raw" {
+				return "", fmt.Errorf("--output must be 'table' or 'raw', got %q", outputFormat)
+			}
 		} else if strings.HasPrefix(arg, "--") {
 			return "", fmt.Errorf("unknown argument: %s", arg)
 		} else {
@@ -253,7 +305,7 @@ func connectDdev() (*sql.DB, string, error) {
 		desc.Raw.DBInfo.Password,
 		desc.Raw.DBInfo.PublishedPort,
 		desc.Raw.DBInfo.DBName,
-	)
+		)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {

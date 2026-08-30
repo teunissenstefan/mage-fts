@@ -2,6 +2,37 @@
 
 Full-text search across every table and column of a local DDEV database, remote Magento database, or remote WordPress database. Useful for tracking down where a specific value lives without knowing the schema upfront.
 
+## Install
+
+```bash
+brew install epenthesis/tap/mage-fts
+```
+
+Or, if you would rather tap once and use short names afterwards:
+
+```bash
+brew tap epenthesis/tap
+brew install mage-fts
+```
+
+With a Go toolchain:
+
+```bash
+go install github.com/epenthesis/mage-fts@latest
+```
+
+Or from a checkout:
+
+```bash
+go build -o mage-fts .
+```
+
+### Updating
+
+```bash
+brew update && brew upgrade mage-fts        # or `brew upgrade` for everything at once
+```
+
 ## Usage
 
 ```bash
@@ -47,7 +78,7 @@ mage-fts "search term" --ssh-json='{"username":"user","server":"example.com","po
 
 Connects over SSH, searches the remote filesystem for `wp-config.php`, reads the database credentials from it, and runs the search through an SSH tunnel.
 
-## Using with [server](https://github.com/teunissenstefan/server-mage-db)
+## Using with [server](https://github.com/epenthesis/server-mage-db)
 
 `server` is a companion command that lets you pick an SSH server interactively via a fuzzy finder. Its `--json` flag outputs the selected server as JSON, which can be piped directly into `mage-fts`:
 

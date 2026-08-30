@@ -1,0 +1,58 @@
+version: 2
+
+project_name: mage-fts
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+# Casks rather than formulae: goreleaser deprecated `brews` in v2.10, and
+# Homebrew now wants pre-built binaries distributed as casks.
+homebrew_casks:
+  - name: mage-fts
+    binaries: [mage-fts]
+    homepage: https://github.com/epenthesis/mage-fts
+    description: Full-text search across every table and column of a Magento, WordPress or DDEV database
+    repository:
+      owner: epenthesis
+      name: homebrew-tap
+      # The tap's default branch is master, not main.
+      branch: master
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_msg_template: "mage-fts {{ .Tag }}"
+    # Casks are downloaded with curl, which sets the macOS quarantine flag.
+    # Without code signing, Gatekeeper then refuses to run the binary. Strip
+    # the flag on install until the release is properly signed and notarized.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/mage-fts"]
+          end

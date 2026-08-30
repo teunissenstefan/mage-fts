@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,18 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/epenthesis/mage-fts/internal/update"
 )
+
+// version is overwritten at link time by goreleaser with -X main.version.
+// Builds that do not go through the release pipeline report "dev", which the
+// update check treats as unreleased and stays silent about.
+var version = "dev"
+
+// versionEnv overrides the reported version at runtime, so a local build can
+// be made to look old enough to test the update notice.
+const versionEnv = "MAGE_FTS_VERSION"
 
 type DdevDescribe struct {
 	Raw struct {
@@ -36,6 +48,22 @@ type SearchResult struct {
 }
 
 func main() {
+	if v := os.Getenv(versionEnv); v != "" {
+		version = v
+	}
+
+	for _, arg := range os.Args[1:] {
+		if arg == "--version" || arg == "-v" {
+			fmt.Println("mage-fts", version)
+			return
+		}
+	}
+
+	// The release check runs alongside the search and is never waited on: a
+	// slow or unreachable GitHub must not hold up a database query.
+	updateCh := make(chan update.Result, 1)
+	go func() { updateCh <- update.Check(context.Background(), version) }()
+
 	for _, arg := range os.Args[1:] {
 		if strings.HasPrefix(arg, "--ssh-json=") {
 			sshJSON = strings.TrimPrefix(arg, "--ssh-json=")
@@ -135,6 +163,16 @@ func main() {
 		fmt.Println()
 	}
 	fmt.Fprintf(os.Stderr, "%d matches in %d tables \n", hitColumnCount, hitTableCount)
+
+	// Non-blocking: if the check has not come back by now, skip it rather
+	// than hold the process open for it.
+	select {
+	case res := <-updateCh:
+		if res.Available {
+			fmt.Fprintf(os.Stderr, "\nmage-fts %s is available (you have %s). Run: brew upgrade mage-fts\n", res.Latest, version)
+		}
+	default:
+	}
 }
 
 func formatRow(row []interface{}) {
@@ -200,6 +238,7 @@ func printHelpExit() {
 	fmt.Fprintln(os.Stderr, "  --ssh-json=JSON\tConnect to remote server via SSH (use with server --json)")
 	fmt.Fprintln(os.Stderr, "  --wp\t\t\tSearch remote WordPress database (requires --ssh-json=)")
 	fmt.Fprintln(os.Stderr, "  --output=FORMAT\tOutput format: table (default), raw")
+	fmt.Fprintln(os.Stderr, "  --version\t\tPrint the version and exit")
 	os.Exit(1)
 }
 
@@ -305,7 +344,7 @@ func connectDdev() (*sql.DB, string, error) {
 		desc.Raw.DBInfo.Password,
 		desc.Raw.DBInfo.PublishedPort,
 		desc.Raw.DBInfo.DBName,
-		)
+	)
 
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
